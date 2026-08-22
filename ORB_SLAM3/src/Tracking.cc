@@ -2402,6 +2402,13 @@ void Tracking::Track()
         // Reset if the camera get lost soon after initialization
         if(mState==LOST)
         {
+            // In localization mode, never reset/create map. Keep trying relocalization.
+            if(mbOnlyTracking)
+            {
+                mLastFrame = Frame(mCurrentFrame);
+                return;
+            }
+
             if(pCurrentMap->KeyFramesInMap()<=10)
             {
                 mpSystem->ResetActiveMap();
@@ -2414,9 +2421,7 @@ void Tracking::Track()
                     mpSystem->ResetActiveMap();
                     return;
                 }
-
             CreateMapInAtlas();
-
             return;
         }
 
@@ -3761,12 +3766,32 @@ bool Tracking::Relocalization()
 
     // Relocalization is performed when tracking is lost
     // Track Lost: Query KeyFrame Database for keyframe candidates for relocalisation
-    vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectRelocalizationCandidates(&mCurrentFrame, mpAtlas->GetCurrentMap());
+    vector<KeyFrame*> vpCandidateKFs =
+    mpKeyFrameDB->DetectRelocalizationCandidates(&mCurrentFrame, mpAtlas->GetCurrentMap());
 
-    if(vpCandidateKFs.empty()) {
+    if(vpCandidateKFs.empty())
+    {
+        std::cout << "[Reloc] DB candidates=0"
+                << " frameBoW=" << mCurrentFrame.mBowVec.size()
+                << " fallback to current-map KFs" << std::endl;
+
+        vpCandidateKFs = mpAtlas->GetCurrentMap()->GetAllKeyFrames();
+        if (vpCandidateKFs.size() > 80)
+            vpCandidateKFs.resize(80);
+
+        std::cout << "[Reloc] fallback candidates=" << vpCandidateKFs.size() << std::endl;
+    }
+
+    if(vpCandidateKFs.empty())
+    {
         Verbose::PrintMess("There are not candidates", Verbose::VERBOSITY_NORMAL);
         return false;
     }
+
+    // if(vpCandidateKFs.empty()) {
+    //     Verbose::PrintMess("There are not candidates", Verbose::VERBOSITY_NORMAL);
+    //     return false;
+    // }
 
     const int nKFs = vpCandidateKFs.size();
 
@@ -4230,6 +4255,12 @@ void Tracking::SaveSubTrajectory(string strNameFile_frames, string strNameFile_k
 float Tracking::GetImageScale()
 {
     return mImageScale;
+}
+
+void Tracking::RequestRelocalization()
+{
+    mbOnlyTracking = true;
+    mState = LOST;
 }
 
 #ifdef REGISTER_LOOP

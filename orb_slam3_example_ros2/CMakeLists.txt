@@ -66,6 +66,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(orb_slam3 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 message("orb_slam3 dirs: ${orb_slam3_INCLUDE_DIRS}, ${orb_slam3_LIBRARIES}, ${orb_slam3_LIBRARIES_DIRS}")
 
@@ -78,9 +79,11 @@ get_filename_component(SECOND_FOLDER_ABSOLUTE ${PROJECT_SOURCE_DIR} DIRECTORY)
 include_directories(
 ${SECOND_FOLDER_ABSOLUTE}
 ${SECOND_FOLDER_ABSOLUTE}/include
-${orb_slam3_INCLUDE_DIRS}/orb_slam3/
-${orb_slam3_INCLUDE_DIRS}/orb_slam3/CameraModels/
-${orb_slam3_INCLUDE_DIRS}/orb_slam3/Thirdparty/Sophus/
+${orb_slam3_INCLUDE_DIRS}
+/home/sunrise/ros2_ws/install/orb_slam3/include
+/home/sunrise/ros2_ws/install/orb_slam3/include/orb_slam3          # ← critical for Converter.h
+/home/sunrise/ros2_ws/install/orb_slam3/include/orb_slam3/CameraModels
+/home/sunrise/ros2_ws/install/orb_slam3/include/orb_slam3/Thirdparty/Sophus
 ${EIGEN3_INCLUDE_DIR}
 ${OpenCV_INCLUDE_DIRS}
 )
@@ -88,20 +91,23 @@ ${OpenCV_INCLUDE_DIRS}
 link_directories(
     ${CMAKE_SYSROOT}/usr/lib/hbbpu/
     ${CMAKE_SYSROOT}/usr/lib/hbmedia/
+    /usr/hobot/lib
 )
 
 set(LIBS
         ${OpenCV_LIBS}
         ${EIGEN3_LIBS}
+        -lboost_system
         #${SECOND_FOLDER_ABSOLUTE}/lib/libDBoW3.so
         #${SECOND_FOLDER_ABSOLUTE}/lib/libg2o.so
         #${SECOND_FOLDER_ABSOLUTE}/lib/libORB_SLAM3.so
-        -lboost_system
         ${orb_slam3_LIBRARIES}
+        /usr/hobot/lib/libalog.so
+        /usr/hobot/lib/libcnn_intf.so
         )
 
 set(ROS2_LIBS
-        rclcpp
+    rclcpp
 	sensor_msgs
 	nav_msgs
 	rclcpp_components
@@ -110,8 +116,16 @@ set(ROS2_LIBS
 	tf2_ros
 	console_bridge
 	orb_slam3
-        tf2_geometry_msgs
+    tf2_geometry_msgs
 	)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/SaveMap.srv"
+  "srv/SetLocalizationMode.srv"
+  "srv/LoadMap.srv"
+)
+
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 #build ROS2 examples
 add_executable(stereo_inertial src/ros2_stereo_inertial.cpp)
@@ -123,6 +137,7 @@ install(TARGETS stereo_inertial DESTINATION lib/${PROJECT_NAME})
 add_executable(stereo src/ros2_stereo.cpp)
 target_link_libraries(stereo ${LIBS})
 ament_target_dependencies(stereo ${ROS2_LIBS})
+target_link_libraries(stereo "${cpp_typesupport_target}")
 install(TARGETS stereo DESTINATION lib/${PROJECT_NAME})
 
 #rgbd_inertial

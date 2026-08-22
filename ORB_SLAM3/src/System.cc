@@ -1951,60 +1951,90 @@ void System::InsertTrackTime(double& time)
 }
 #endif
 
-void System::SaveAtlas(int type){
-    if(!mStrSaveAtlasToFile.empty())
+void System::ForceRelocalization()
+{
+    // 1) localization-only mode
     {
-        //clock_t start = clock();
+        unique_lock<mutex> lock(mMutexMode);
+        mbActivateLocalizationMode = true;
+    }
+    {
+        unique_lock<mutex> lock(mMutexReset);
+        mbReset = false;
+        mbResetActiveMap = false;
+    }
 
-        // Save the current session
-        mpAtlas->PreSave();
+    mpTracker->InformOnlyTracking(true);
+    mpTracker->RequestRelocalization();
+}
 
-        string pathSaveFileName = "./";
-        pathSaveFileName = pathSaveFileName.append(mStrSaveAtlasToFile);
-        pathSaveFileName = pathSaveFileName.append(".osa");
+void System::SaveAtlas(int type)
+{
+    SaveAtlas(mStrSaveAtlasToFile, type);
+}
 
-        string strVocabularyChecksum = CalculateCheckSum(mStrVocabularyFilePath,TEXT_FILE);
-        std::size_t found = mStrVocabularyFilePath.find_last_of("/\\");
-        string strVocabularyName = mStrVocabularyFilePath.substr(found+1);
+void System::SaveAtlas(const std::string &filename, int type)
+{
+    if(filename.empty())
+    {
+        cout << "SaveAtlas: filename is empty, nothing to save." << endl;
+        return;
+    }
 
-        if(type == TEXT_FILE) // File text
-        {
-            cout << "Starting to write the save text file " << endl;
-            std::remove(pathSaveFileName.c_str());
-            std::ofstream ofs(pathSaveFileName, std::ios::binary);
-            boost::archive::text_oarchive oa(ofs);
+    // Save the current session
+    mpAtlas->PreSave();
 
-            oa << strVocabularyName;
-            oa << strVocabularyChecksum;
-            oa << mpAtlas;
-            cout << "End to write the save text file" << endl;
-        }
-        else if(type == BINARY_FILE) // File binary
-        {
-            cout << "Starting to write the save binary file" << endl;
-            std::remove(pathSaveFileName.c_str());
-            std::ofstream ofs(pathSaveFileName, std::ios::binary);
-            boost::archive::binary_oarchive oa(ofs);
-            oa << strVocabularyName;
-            oa << strVocabularyChecksum;
-            oa << mpAtlas;
-            cout << "End to write save binary file" << endl;
-        }
+    string pathSaveFileName = filename + ".osa";
+
+    string strVocabularyChecksum = CalculateCheckSum(mStrVocabularyFilePath, TEXT_FILE);
+    std::size_t found = mStrVocabularyFilePath.find_last_of("/\\");
+    string strVocabularyName = mStrVocabularyFilePath.substr(found+1);
+
+    if(type == TEXT_FILE)
+    {
+        cout << "Starting to write the save text file: " << pathSaveFileName << endl;
+        std::remove(pathSaveFileName.c_str());
+        std::ofstream ofs(pathSaveFileName, std::ios::binary);
+        boost::archive::text_oarchive oa(ofs);
+        oa << strVocabularyName;
+        oa << strVocabularyChecksum;
+        oa << mpAtlas;
+        cout << "End to write the save text file" << endl;
+    }
+    else if(type == BINARY_FILE)
+    {
+        cout << "Starting to write the save binary file: " << pathSaveFileName << endl;
+        std::remove(pathSaveFileName.c_str());
+        std::ofstream ofs(pathSaveFileName, std::ios::binary);
+        boost::archive::binary_oarchive oa(ofs);
+        oa << strVocabularyName;
+        oa << strVocabularyChecksum;
+        oa << mpAtlas;
+        cout << "End to write save binary file" << endl;
     }
 }
 
 bool System::LoadAtlas(int type)
 {
+    return LoadAtlas(mStrLoadAtlasFromFile, type);
+}
+
+bool System::LoadAtlas(const std::string &filename, int type)
+{
+    if(filename.empty())
+    {
+        cout << "LoadAtlas: filename is empty" << endl;
+        return false;
+    }
+
     string strFileVoc, strVocChecksum;
     bool isRead = false;
 
-    string pathLoadFileName = "./";
-    pathLoadFileName = pathLoadFileName.append(mStrLoadAtlasFromFile);
-    pathLoadFileName = pathLoadFileName.append(".osa");
+    string pathLoadFileName = filename;
 
-    if(type == TEXT_FILE) // File text
+    if(type == TEXT_FILE)
     {
-        cout << "Starting to read the save text file " << endl;
+        cout << "Starting to read the save text file: " << pathLoadFileName << endl;
         std::ifstream ifs(pathLoadFileName, std::ios::binary);
         if(!ifs.good())
         {
@@ -2015,12 +2045,12 @@ bool System::LoadAtlas(int type)
         ia >> strFileVoc;
         ia >> strVocChecksum;
         ia >> mpAtlas;
-        cout << "End to load the save text file " << endl;
+        cout << "End to load the save text file" << endl;
         isRead = true;
     }
-    else if(type == BINARY_FILE) // File binary
+    else if(type == BINARY_FILE)
     {
-        cout << "Starting to read the save binary file"  << endl;
+        cout << "Starting to read the save binary file: " << pathLoadFileName << endl;
         std::ifstream ifs(pathLoadFileName, std::ios::binary);
         if(!ifs.good())
         {
@@ -2037,19 +2067,79 @@ bool System::LoadAtlas(int type)
 
     if(isRead)
     {
-        //Check if the vocabulary is the same
-        string strInputVocabularyChecksum = CalculateCheckSum(mStrVocabularyFilePath,TEXT_FILE);
-
+        // Check if the vocabulary is the same
+        string strInputVocabularyChecksum = CalculateCheckSum(mStrVocabularyFilePath, TEXT_FILE);
         if(strInputVocabularyChecksum.compare(strVocChecksum) != 0)
         {
-            cout << "The vocabulary load isn't the same which the load session was created " << endl;
+            cout << "The vocabulary load isn't the same which the load session was created" << endl;
             cout << "-Vocabulary name: " << strFileVoc << endl;
-            return false; // Both are differents
+            return false;
         }
 
         mpAtlas->SetKeyFrameDababase(mpKeyFrameDatabase);
         mpAtlas->SetORBVocabulary(mpVocabulary);
         mpAtlas->PostLoad();
+
+        // updated by grok
+        mpKeyFrameDatabase->clear();
+
+        Map* bestMap = nullptr;
+        std::size_t bestKF = 0;
+
+        std::vector<Map*> maps = mpAtlas->GetAllMaps();
+        std::cout << "[LoadAtlas] maps=" << maps.size() << std::endl;
+
+        for (Map* pMap : maps)
+        {
+            if (!pMap) continue;
+
+            std::vector<KeyFrame*> kfs = pMap->GetAllKeyFrames();
+            std::cout << "[LoadAtlas] KFs=" << kfs.size()
+                    << " MPs=" << pMap->GetAllMapPoints().size() << std::endl;
+
+            for (KeyFrame* pKF : kfs)
+            {
+                if (!pKF || pKF->isBad()) continue;
+
+                pKF->SetORBVocabulary(mpVocabulary);
+                pKF->SetKeyFrameDatabase(mpKeyFrameDatabase);
+
+                if (pKF->mBowVec.empty())
+                    pKF->ComputeBoW();
+
+                mpKeyFrameDatabase->add(pKF);
+            }
+
+            if (kfs.size() > bestKF)
+            {
+                bestKF = kfs.size();
+                bestMap = pMap;
+            }
+        }
+
+        if (!bestMap || bestKF == 0)
+        {
+            std::cout << "[LoadAtlas] ERROR: no keyframes in loaded atlas" << std::endl;
+            return false;
+        }
+
+        mpAtlas->ChangeMap(bestMap);
+        std::cout << "[LoadAtlas] current map set, KFs=" << bestKF << std::endl;
+        Map* cur = mpAtlas->GetCurrentMap();
+        int same_map = 0;
+        int bow_ok = 0;
+        auto kfs = cur->GetAllKeyFrames();
+        for (KeyFrame* pKF : kfs)
+        {
+            if (!pKF || pKF->isBad()) continue;
+            if (pKF->GetMap() == cur) same_map++;
+            if (!pKF->mBowVec.empty()) bow_ok++;
+        }
+        std::cout << "[LoadAtlas] KF same_map_ptr=" << same_map
+                << " KF with BoW=" << bow_ok
+                << " totalKF=" << kfs.size()
+                << std::endl;
+        // updated by grok
 
         return true;
     }

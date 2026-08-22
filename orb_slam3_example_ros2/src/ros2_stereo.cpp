@@ -22,7 +22,7 @@
 #include <queue>
 #include <thread>
 #include <mutex>
-
+#include <ctime>
 #include <rclcpp/rclcpp.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <message_filters/subscriber.h>
@@ -37,6 +37,13 @@
 #include <nav_msgs/msg/path.hpp>
 
 #include "orb_slam3/System.h"
+
+#include "orb_slam3_example_ros2/srv/save_map.hpp"
+#include "orb_slam3_example_ros2/srv/set_localization_mode.hpp"
+#include "orb_slam3_example_ros2/srv/load_map.hpp"
+
+#include <ament_index_cpp/get_package_share_directory.hpp>
+#include <filesystem> 
 
 class ImageGrabber {
 public:
@@ -58,6 +65,28 @@ public:
                 create_publisher<sensor_msgs::msg::PointCloud2>("map_pointcloud2", 10);
         frame_publisher_ = node_->
                 create_publisher<sensor_msgs::msg::Image>("keypoint_render_frame", 10);
+
+        save_map_service_ = node_ -> create_service<orb_slam3_example_ros2::srv::SaveMap>(
+            "save_map",
+            std::bind(&ImageGrabber::save_map_callback, this,
+                        std::placeholders::_1, std::placeholders::_2
+            )
+        );
+
+        load_map_service_ = node_ -> create_service<orb_slam3_example_ros2::srv::LoadMap>(
+            "load_map",
+            std::bind(&ImageGrabber::load_map_callback, this,
+                        std::placeholders::_1, std::placeholders::_2
+            )
+        );
+
+        set_loc_mode_service_ = node_ -> create_service<orb_slam3_example_ros2::srv::SetLocalizationMode>(
+            "localize_robot",
+            std::bind(&ImageGrabber::localize_callback, this,
+                        std::placeholders::_1, std::placeholders::_2
+            )
+        );
+                
     }
 
     void GrabStereo(const sensor_msgs::msg::Image::ConstSharedPtr msgLeft,
@@ -67,6 +96,21 @@ public:
     void PubImage();
     void PubPointCloud();
 
+    void save_map_callback(
+        const std::shared_ptr<orb_slam3_example_ros2::srv::SaveMap::Request> request,
+        std::shared_ptr<orb_slam3_example_ros2::srv::SaveMap::Response> response
+    );
+
+    void load_map_callback(
+        const std::shared_ptr<orb_slam3_example_ros2::srv::LoadMap::Request> request,
+        std::shared_ptr<orb_slam3_example_ros2::srv::LoadMap::Response> response
+    );
+
+    void localize_callback(
+        const std::shared_ptr<orb_slam3_example_ros2::srv::SetLocalizationMode::Request> request,
+        std::shared_ptr<orb_slam3_example_ros2::srv::SetLocalizationMode::Response> response
+    );
+
     ORB_SLAM3::System* mpSLAM_;
 
     rclcpp::Node::SharedPtr node_;
@@ -74,6 +118,10 @@ public:
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_publisher_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud2_publisher_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr frame_publisher_;
+
+    rclcpp::Service<orb_slam3_example_ros2::srv::SaveMap>::SharedPtr save_map_service_;
+    rclcpp::Service<orb_slam3_example_ros2::srv::SetLocalizationMode>::SharedPtr set_loc_mode_service_;
+    rclcpp::Service<orb_slam3_example_ros2::srv::LoadMap>::SharedPtr load_map_service_;
 
     std::string image1_topic_;
     std::string image2_topic_;
@@ -207,7 +255,34 @@ void ImageGrabber::GrabStereo(const sensor_msgs::msg::Image::ConstSharedPtr msgL
     Sophus::SE3f Tcw_SE3F = mpSLAM_->TrackStereo(cv_ptrLeft->image,
                                                  cv_ptrRight->image,
                                                  rclcpp::Time(cv_ptrLeft->header.stamp).seconds());
+    
+    // ===== state log for relocalization =====
+    {
+        int state = mpSLAM_->GetTrackingState();
+        static int last_state = -1;
 
+        // count tracked map points (optional but useful)
+        auto mps = mpSLAM_->GetTrackedMapPoints();
+        int n_tracked = 0;
+        for (auto* p : mps) {
+            if (p) n_tracked++;
+        }
+
+        if (state != last_state) {
+            if (state == 2) {
+                RCLCPP_INFO(node_->get_logger(),
+                    "TRACKING OK (state=2), tracked points=%d", n_tracked);
+            } else if (state == 3 || state == 4) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "RELOCALIZING... (state=%d), tracked points=%d", state, n_tracked);
+            } else {
+                RCLCPP_INFO(node_->get_logger(),
+                    "Tracking state=%d, tracked points=%d", state, n_tracked);
+            }
+            last_state = state;
+        }
+    }
+    // ===== end state log =====                           
     std::unique_lock<std::mutex> locker_pose(pose_mutex_);
     pose_buffer_.push(Tcw_SE3F);
     locker_pose.unlock();
@@ -265,23 +340,24 @@ void ImageGrabber::PubPose() {
     }
 }
 
-void ImageGrabber::PubImage() {
+void ImageGrabber::PubImage()
+{
     sensor_msgs::msg::Image img_msg;
     cv_bridge::CvImage img_bridge;
     cv::Mat toshow;
     std_msgs::msg::Header header;
-    bool received_image;
     header.frame_id = "camera_link";
-    while (rclcpp::ok()) {
 
+    while (rclcpp::ok()) {
         std::unique_lock<std::mutex> locker_image(image_mutex_);
-        while (image_buffer_.empty())
-            pose_cv_.wait(locker_image);
-        received_image = image_buffer_.front();
+        while (image_buffer_.empty()) {
+            image_cv_.wait(locker_image);   // FIXED: was pose_cv_
+        }
+        bool received_image = image_buffer_.front();
         image_buffer_.pop();
         locker_image.unlock();
 
-        if(received_image) {
+        if (received_image) {
             toshow = mpSLAM_->GetmpFrameDrawe()->DrawFrame(1.0f);
             header.stamp = node_->now();
             img_bridge = cv_bridge::CvImage(header, "bgr8", toshow);
@@ -304,6 +380,134 @@ void ImageGrabber::PubPointCloud() {
         sensor_msgs::msg::PointCloud2 cloud = MapPointsToPointCloud(orb_point);
         pointcloud2_publisher_->publish(cloud);
     }
+}
+
+void ImageGrabber::save_map_callback(
+    const std::shared_ptr<orb_slam3_example_ros2::srv::SaveMap::Request> request,
+    std::shared_ptr<orb_slam3_example_ros2::srv::SaveMap::Response> response
+)
+{
+    try {
+        // 1. Stop mapping (no new keyframes / map points)
+        mpSLAM_->ActivateLocalizationMode();
+        RCLCPP_INFO(node_->get_logger(), "Switched to Localization Mode before saving map");
+
+        // 2. Wait until Local Mapping has time to stop
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        // 3. Build filename
+        auto now = std::chrono::system_clock::now();
+        std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+        std::tm* time_info = std::localtime(&now_c);
+
+        char buffer[80];
+        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H-%M-%S", time_info);
+
+        std::string map_name = request->name;
+        std::string file_name = std::string(buffer) + "_" + map_name;
+
+        std::filesystem::create_directories("./maps");
+        std::string full_path = "./maps/" + file_name;
+
+        RCLCPP_INFO(node_->get_logger(), "Saving map to: %s.osa", full_path.c_str());
+
+        // 4. Save
+        mpSLAM_->SaveAtlas(full_path, ORB_SLAM3::System::FileType::BINARY_FILE);
+
+        response->success = true;
+        response->message = "Map saved successfully as " + full_path + ".osa";
+        RCLCPP_INFO(node_->get_logger(), "%s", response->message.c_str());
+    }
+    catch (const std::exception& e) {
+        response->success = false;
+        response->message = std::string("Failed to save map: ") + e.what();
+        RCLCPP_ERROR(node_->get_logger(), "%s", response->message.c_str());
+    }
+}
+
+void ImageGrabber::load_map_callback(
+    const std::shared_ptr<orb_slam3_example_ros2::srv::LoadMap::Request> request,
+    std::shared_ptr<orb_slam3_example_ros2::srv::LoadMap::Response> response)
+{
+    try {
+        std::string file_name = request->map;
+        RCLCPP_INFO(node_->get_logger(), "Loading map file: %s", file_name.c_str());
+
+        if (!std::filesystem::exists(file_name)) {
+            response->success = false;
+            response->message = "Map file not found: " + file_name;
+            RCLCPP_ERROR(node_->get_logger(), "%s", response->message.c_str());
+            return;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        bool load_ok = mpSLAM_->LoadAtlas(file_name, ORB_SLAM3::System::BINARY_FILE);
+        if (!load_ok) {
+            response->success = false;
+            response->message = "Failed to load map: " + file_name;
+            RCLCPP_ERROR(node_->get_logger(), "%s", response->message.c_str());
+            return;
+        }
+
+        auto mps = mpSLAM_->GetAllMapPoints();
+        int n_valid = 0;
+        for (auto* p : mps) {
+            if (p) n_valid++;
+        }
+        RCLCPP_INFO(node_->get_logger(),
+                    "After LoadAtlas: map points = %d (raw size=%zu)",
+                    n_valid, mps.size());
+
+        // Force LOST + localization mode
+        mpSLAM_->ForceRelocalization();
+
+        RCLCPP_INFO(node_->get_logger(),
+        "After ForceRelocalization: tracking state = %d",
+        mpSLAM_->GetTrackingState());
+
+        // Clear old visualization data
+        {
+            std::unique_lock<std::mutex> locker_pose(pose_mutex_);
+            while (!pose_buffer_.empty()) pose_buffer_.pop();
+        }
+        {
+            std::unique_lock<std::mutex> locker_image(image_mutex_);
+            while (!image_buffer_.empty()) image_buffer_.pop();
+        }
+        {
+            std::unique_lock<std::mutex> locker_point(point_mutex_);
+            while (!point_buffer_.empty()) point_buffer_.pop();
+        }
+        path_.poses.clear();
+
+        response->success = true;
+        response->message = "Map loaded, localization mode on, waiting for relocalization";
+        RCLCPP_INFO(node_->get_logger(), "%s", response->message.c_str());
+    }
+    catch (const std::exception& e) {
+        response->success = false;
+        response->message = std::string("Failed to load map: ") + e.what();
+        RCLCPP_ERROR(node_->get_logger(), "%s", response->message.c_str());
+    }
+}
+
+void ImageGrabber::localize_callback(
+        const std::shared_ptr<orb_slam3_example_ros2::srv::SetLocalizationMode::Request> request,
+        std::shared_ptr<orb_slam3_example_ros2::srv::SetLocalizationMode::Response> response
+){
+    if(request->enable)
+    {
+        mpSLAM_->ActivateLocalizationMode();
+        RCLCPP_INFO(node_->get_logger(), "Switched to Localization Mode");
+        response->message = "Localization mode ON";
+    }
+    else{
+        mpSLAM_->DeactivateLocalizationMode();
+        RCLCPP_INFO(node_->get_logger(), "Switched to Mapping Mode");
+        response->message = "Mapping mode ON";
+    }
+    response->success = true;
 }
 
 int main(int argc, char **argv) {

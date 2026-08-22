@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 TOOL_CHAIN_CMD=
-ENABLE_VIEWER=ON
+ENABLE_VIEWER=OFF
 FILE_PATH=`pwd`
 
 clean_Thirdparty() {
@@ -80,7 +80,7 @@ echo "Configuring and building ORB_SLAM3 ..."
 cd ${FILE_PATH}
 mkdir -p build
 cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_VIEWER=${ENABLE_VIEWER} ${TOOL_CHAIN_CMD}
+cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_VIEWER=${ENABLE_VIEWER} -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/hobot/lib" -DCMAKE_EXE_LINKER_FLAGS="-L/usr/hobot/lib" ${TOOL_CHAIN_CMD}
 make -j2
 
 #build_Examples_ROS2

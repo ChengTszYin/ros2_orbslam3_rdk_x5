@@ -230,6 +230,15 @@ public:
    //添加获取 mpFrameDrawer 成员变量接口
    FrameDrawer* GetmpFrameDrawe();
 
+    void ForceRelocalization();
+
+    void SaveAtlas(int type);
+    void SaveAtlas(const std::string &filename, int type = BINARY_FILE);
+
+    bool LoadAtlas(int type);
+    bool LoadAtlas(const std::string &filename, int type = BINARY_FILE);
+
+
     // For debugging
     double GetTimeFromIMUInit();
     bool isLost();
@@ -254,9 +263,7 @@ public:
 
 private:
 
-    void SaveAtlas(int type);
-    bool LoadAtlas(int type);
-
+    
     string CalculateCheckSum(string filename, int type);
 
     // Input sensor

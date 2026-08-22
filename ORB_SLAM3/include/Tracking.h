@@ -100,7 +100,7 @@ public:
     }
 
     void CreateMapInAtlas();
-    //std::mutex mMutexTracks;
+    std::mutex mMutexTracks;
 
     //--
     void NewDataset();
@@ -112,6 +112,8 @@ public:
     void SaveSubTrajectory(string strNameFile_frames, string strNameFile_kf, Map* pMap);
 
     float GetImageScale();
+
+    void RequestRelocalization();
 
 #ifdef REGISTER_LOOP
     void RequestStop();

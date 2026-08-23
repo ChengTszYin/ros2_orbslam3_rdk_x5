@@ -121,7 +121,18 @@ void LoopClosing::Run()
             {
                 if(mbMergeDetected)
                 {
-                    if ((mpTracker->mSensor==System::IMU_MONOCULAR || mpTracker->mSensor==System::IMU_STEREO || mpTracker->mSensor==System::IMU_RGBD) &&
+                    if (mbDisableMapMerge)
+                    {
+                        std::cout << "[LoopClosing] merge disabled after LoadAtlas, skip" << std::endl;
+                        mbMergeDetected = false;
+                        if (mpMergeLastCurrentKF) mpMergeLastCurrentKF->SetErase();
+                        if (mpMergeMatchedKF) mpMergeMatchedKF->SetErase();
+                        mnMergeNumCoincidences = 0;
+                        mvpMergeMatchedMPs.clear();
+                        mvpMergeMPs.clear();
+                        mnMergeNumNotFound = 0;
+                    }
+                    else if ((mpTracker->mSensor==System::IMU_MONOCULAR || mpTracker->mSensor==System::IMU_STEREO || mpTracker->mSensor==System::IMU_RGBD) &&
                         (!mpCurrentKF->GetMap()->isImuInitialized()))
                     {
                         cout << "IMU is not initilized, merge is aborted" << endl;

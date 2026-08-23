@@ -2124,6 +2124,18 @@ bool System::LoadAtlas(const std::string &filename, int type)
         }
 
         mpAtlas->ChangeMap(bestMap);
+        if (mpLoopCloser) mpLoopCloser->SetDisableMapMerge(true);
+        
+        unsigned long maxKF = 0, maxMP = 0;
+        for (Map* pMap : mpAtlas->GetAllMaps()) {
+            for (KeyFrame* kf : pMap->GetAllKeyFrames())
+                if (kf) maxKF = std::max(maxKF, kf->mnId);
+            for (MapPoint* mp : pMap->GetAllMapPoints())
+                if (mp) maxMP = std::max(maxMP, mp->mnId);
+        }
+        if (KeyFrame::nNextId <= maxKF) KeyFrame::nNextId = maxKF + 1;
+        if (MapPoint::nNextId <= maxMP) MapPoint::nNextId = maxMP + 1;
+
         std::cout << "[LoadAtlas] current map set, KFs=" << bestKF << std::endl;
         Map* cur = mpAtlas->GetCurrentMap();
         int same_map = 0;

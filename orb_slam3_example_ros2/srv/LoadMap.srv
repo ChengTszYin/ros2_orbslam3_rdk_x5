@@ -1,4 +1,5 @@
 string map
+bool extend_map
 ---
 bool success
 string message

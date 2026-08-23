@@ -82,6 +82,8 @@ public:
 
     bool isFinished();
 
+    void SetDisableMapMerge(bool flag) { mbDisableMapMerge = flag; }
+
     Viewer* mpViewer;
 
 #ifdef REGISTER_TIMES
@@ -155,6 +157,8 @@ protected:
     bool mbFinishRequested;
     bool mbFinished;
     std::mutex mMutexFinish;
+
+    bool mbDisableMapMerge = false;
 
     Atlas* mpAtlas;
     Tracking* mpTracker;

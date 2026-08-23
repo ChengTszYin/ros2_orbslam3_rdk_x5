@@ -126,6 +126,9 @@ public:
     std::string image1_topic_;
     std::string image2_topic_;
 
+    bool extend_map_after_reloc_ = false;
+    bool waiting_reloc_after_load_ = false;
+
 private:
     sensor_msgs::msg::PointCloud2 MapPointsToPointCloud (
             std::vector<ORB_SLAM3::MapPoint*> map_points);
@@ -259,15 +262,30 @@ void ImageGrabber::GrabStereo(const sensor_msgs::msg::Image::ConstSharedPtr msgL
     // ===== state log for relocalization =====
     {
         int state = mpSLAM_->GetTrackingState();
-        static int last_state = -1;
-
-        // count tracked map points (optional but useful)
         auto mps = mpSLAM_->GetTrackedMapPoints();
         int n_tracked = 0;
         for (auto* p : mps) {
             if (p) n_tracked++;
         }
 
+        if (waiting_reloc_after_load_ && state == 2 && n_tracked > 50)
+        {
+            waiting_reloc_after_load_ = false;
+
+            if (extend_map_after_reloc_)
+            {
+                mpSLAM_->DeactivateLocalizationMode();
+                RCLCPP_INFO(node_->get_logger(),
+                    "Localized with %d map matches. Mapping ON.", n_tracked);
+            }
+            else
+            {
+                RCLCPP_INFO(node_->get_logger(),
+                    "Localized with %d map matches. Mapping OFF.", n_tracked);
+            }
+        }
+        static int last_state = -1;
+        // count tracked map points (optional but useful)
         if (state != last_state) {
             if (state == 2) {
                 RCLCPP_INFO(node_->get_logger(),
@@ -459,6 +477,8 @@ void ImageGrabber::load_map_callback(
                     "After LoadAtlas: map points = %d (raw size=%zu)",
                     n_valid, mps.size());
 
+        extend_map_after_reloc_ = request->extend_map;
+        waiting_reloc_after_load_ = true;
         // Force LOST + localization mode
         mpSLAM_->ForceRelocalization();
 

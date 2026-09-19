@@ -2976,7 +2976,7 @@ bool Tracking::TrackWithMotionModel()
     int th;
 
     if(mSensor==System::STEREO)
-        th=7;
+        th=7; 
     else
         th=15;
 

@@ -1,53 +1,54 @@
 %YAML:1.0
-
-#--------------------------------------------------------------------------------------------
-# Camera Parameters. Adjust them!
-#--------------------------------------------------------------------------------------------
 File.version: "1.0"
 
-Camera.type: "Rectified"
+Camera.type: "PinHole"
 
-# Left Camera (Camera1) calibration
-Camera1.fx: 450.0          # Approximate - replace with your calibration
-Camera1.fy: 450.0
-Camera1.cx: 320.0
-Camera1.cy: 200.0
+# Left = cam0 = /oak/left/image_raw
+Camera1.fx: 456.9672994805817
+Camera1.fy: 457.7514427566948
+Camera1.cx: 320.90097964345927
+Camera1.cy: 235.98432251281304
+Camera1.k1: 0.031674526139209444
+Camera1.k2: -0.02793345554845216
+Camera1.p1: 0.0011452936843498343
+Camera1.p2: 0.0003034644211728265
 
-# Distortion (usually near zero after rectification)
-Camera1.k1: 0.0
-Camera1.k2: 0.0
-Camera1.p1: 0.0
-Camera1.p2: 0.0
+# Right = cam1 = /oak/right/image_raw
+Camera2.fx: 458.51452631971785
+Camera2.fy: 459.0562976758823
+Camera2.cx: 318.9441293919235
+Camera2.cy: 233.87610752179853
+Camera2.k1: 0.022992222826225234
+Camera2.k2: -0.015071166299979016
+Camera2.p1: -0.0013135700515998373
+Camera2.p2: 0.0006172530096550845
 
-# Stereo baseline (OAK-D-Lite is approximately 7.5 cm)
-Stereo.b: 0.075
-
-# Camera resolution (common for OAK-D-Lite mono cameras)
 Camera.width: 640
-Camera.height: 400
-
-# Camera frames per second
-Camera.fps: 20
-
-# Color order (0: BGR, 1: RGB)
+Camera.height: 480
+Camera.fps: 5
 Camera.RGB: 1
 
-# Close/Far threshold
+# |tx| from T_cn_cnm1. If scale looks 10x small, use 0.075 instead.
+# Stereo.b: 0.0075120663157637255
+Stereo.b: 0.0750
 Stereo.ThDepth: 40.0
 
-#--------------------------------------------------------------------------------------------
-# ORB Parameters
-#--------------------------------------------------------------------------------------------
+# T_right_left from Kalibr T_cn_cnm1 (cam1 wrt cam0)
+Stereo.T_c1_c2: !!opencv-matrix
+  rows: 4
+  cols: 4
+  dt: f
+  data: [0.9999955569446771, 0.002913646005075218, -0.0006298871761232668, -0.0750,
+        -0.002907241526466502, 0.999946369823696, 0.009940091705390633, 4.2116983546972656e-07,
+         0.0006588153036504549, -0.009938216306857893, 0.999950397679318, -2.7102634465568122e-05,
+         0.0, 0.0, 0.0, 1.0]
+
 ORBextractor.nFeatures: 1200
 ORBextractor.scaleFactor: 1.2
 ORBextractor.nLevels: 8
 ORBextractor.iniThFAST: 20
 ORBextractor.minThFAST: 7
-ORBextractor.type: "ORB"
 
-#--------------------------------------------------------------------------------------------
-# Viewer Parameters
-#--------------------------------------------------------------------------------------------
 Viewer.KeyFrameSize: 0.05
 Viewer.KeyFrameLineWidth: 1.0
 Viewer.GraphLineWidth: 0.9

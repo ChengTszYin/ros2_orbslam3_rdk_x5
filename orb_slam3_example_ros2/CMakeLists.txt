@@ -164,6 +164,10 @@ target_link_libraries(mono ${LIBS})
 ament_target_dependencies(mono ${ROS2_LIBS})
 install(TARGETS mono DESTINATION lib/${PROJECT_NAME})
 
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
+
 
 
 #file(INSTALL ${SECOND_FOLDER_ABSOLUTE}/lib/libDBoW3.so DESTINATION ${PROJECT_SOURCE_DIR}/install/lib)

@@ -157,7 +157,7 @@ sensor_msgs::msg::PointCloud2 ImageGrabber::MapPointsToPointCloud(
     const int num_channels = 3; // x y z
 
     cloud.header.stamp = node_->get_clock()->now();;
-    cloud.header.frame_id = "map";
+    cloud.header.frame_id = "map_3d";
     cloud.height = 1;
     cloud.width = map_points.size();  //点的个数
     cloud.is_bigendian = false;

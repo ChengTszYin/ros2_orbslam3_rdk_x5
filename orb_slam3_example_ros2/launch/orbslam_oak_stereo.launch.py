@@ -21,8 +21,8 @@ def generate_launch_description():
             'true',
         ],
         remappings=[
-            ('/oak/left/image_raw', '/camera/camera/infra1/image_rect_raw'),
-            ('/oak/right/image_raw', '/camera/camera/infra2/image_rect_raw'),
+            ('/camera/infra1/image_rect_raw', '/oak/left/image_raw'),
+            ('/camera/infra2/image_rect_raw', '/oak/right/image_raw'),
         ],
     )
 
@@ -34,7 +34,7 @@ def generate_launch_description():
         arguments=['raw', 'compressed'],
         remappings=[
             ('in', '/keypoint_render_frame'),
-            ('out', '/orbslam_render_frame'),
+            ('out/compressed', '/orbslam_render_frame/compressed'),
         ],
     )
 
